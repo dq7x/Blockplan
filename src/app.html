@@ -1,0 +1,1279 @@
+<title>Blockplan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: Vermessungstisch. Links Ansicht (3D oder Ebenenplan) mit Ebenenleiste, rechts Messprotokoll mit Block, Material, Ebenen. */
+:root {
+  --bg: #E6EBE9; --panel: #F3F6F5; --panel2: #E9EEEC; --ink: #13232B; --muted: #566870; --line: #C3CDCB;
+  --accent: #D9480F; --accent-ink: #FFFFFF; --scene: #DCE3E1; --good: #2B7A4B; --warn: #A15C00; --bad: #B3261E;
+  --font-display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1519; --panel: #141E23; --panel2: #1B272D; --ink: #E2ECEA; --muted: #8AA0A6; --line: #27393F;
+    --accent: #FF7F45; --accent-ink: #1A0C04; --scene: #0A1115; --good: #5CC48A; --warn: #E8B04A; --bad: #FF6B5E; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1519; --panel: #141E23; --panel2: #1B272D; --ink: #E2ECEA; --muted: #8AA0A6; --line: #27393F;
+  --accent: #FF7F45; --accent-ink: #1A0C04; --scene: #0A1115; --good: #5CC48A; --warn: #E8B04A; --bad: #FF6B5E; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shell { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; padding-block: 10px; }
+
+/* Kopf */
+.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
+.brand { font: 700 26px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.brand i { width: 14px; height: 14px; background: var(--accent); display: inline-block; box-shadow: 4px 4px 0 var(--line); }
+.file { flex: 1 1 220px; min-width: 0; }
+.file b { display: block; font: 600 17px/1.2 var(--font-display); letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file span { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 7px 12px; border-radius: 4px; font-weight: 500; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.small { padding: 4px 8px; font-size: 12px; }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* Raster */
+.app { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: minmax(0, 1fr) auto; }
+.stage { grid-column: 1; grid-row: 1; position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; min-height: 320px; }
+.layerbar { grid-column: 1; grid-row: 2; }
+.side { grid-column: 2; grid-row: 1 / span 2; min-width: 0; min-height: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; display: flex; flex-direction: column; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#c2d { position: absolute; inset: 0; cursor: crosshair; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: transparent; padding: 6px 12px; font-weight: 500; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.stage .zoom { position: absolute; right: 10px; bottom: 10px; z-index: 3; display: flex; gap: 6px; }
+.compass { position: absolute; right: 10px; top: 10px; width: 54px; height: 54px; z-index: 3; pointer-events: none; }
+.compass svg { width: 100%; height: 100%; overflow: visible; }
+.hud { position: absolute; left: 10px; bottom: 10px; z-index: 3; max-width: calc(100% - 140px); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); padding: 5px 9px; border-radius: 4px; font: 12px/1.35 var(--font-mono); pointer-events: none; }
+.hud:empty { display: none; }
+.msg { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); z-index: 5; max-width: min(520px, 92%); background: var(--panel); border: 1px solid var(--accent); border-left-width: 4px; padding: 10px 14px; border-radius: 4px; }
+.drop { position: absolute; inset: 8px; z-index: 6; border: 2px dashed var(--accent); border-radius: 6px; display: grid; place-items: center; background: color-mix(in srgb, var(--panel) 80%, transparent); font: 600 24px var(--font-display); text-transform: uppercase; letter-spacing: .04em; }
+
+/* Ebenenleiste */
+.layerbar { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+.layerbar .range { flex: 1 1 200px; min-width: 140px; display: flex; align-items: center; gap: 8px; }
+.layerbar input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.layerbar .readout { font: 500 13px var(--font-mono); white-space: nowrap; }
+.layerbar .step { width: 30px; padding: 4px 0; text-align: center; }
+
+/* Seitenleiste */
+.sec { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.sec h2 { margin: 0 0 8px; font: 600 13px var(--font-display); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; font-family: var(--font-mono); font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+.origin { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.origin label { display: grid; gap: 3px; font: 600 12px var(--font-display); letter-spacing: .08em; color: var(--muted); }
+.origin input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 6px 8px; font: 500 14px var(--font-mono); }
+.cmdprev { margin: 10px 0 0; padding: 8px; max-height: 220px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; font: 11px/1.45 var(--font-mono); white-space: pre; }
+.chk { display: flex; gap: 8px; align-items: center; }
+.hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.sidetabs { display: flex; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 2; }
+.sidetabs button { flex: 1; border: 0; background: transparent; padding: 10px 6px; font: 600 15px var(--font-display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 3px solid transparent; }
+.sidetabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.pane { padding: 12px 14px 18px; min-width: 0; }
+
+.blockname { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.sw { width: 28px; height: 28px; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent); flex: none; }
+.blockname b { display: block; font: 700 24px/1.05 var(--font-display); letter-spacing: .01em; overflow-wrap: anywhere; }
+.blockname code, code.id { font: 12px var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.coords { width: 100%; border-collapse: collapse; margin: 8px 0; font-family: var(--font-mono); font-size: 13px; }
+.coords th { text-align: left; font: 600 12px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 5px 0; width: 64px; }
+.coords td { padding: 5px 6px; text-align: right; border-top: 1px solid var(--line); }
+.coords td b { font-weight: 500; }
+.coords .world td { color: var(--accent); }
+.props { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.props span { font: 12px var(--font-mono); border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px; background: var(--panel2); }
+.row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.pad { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 8px; }
+.pad button { padding: 6px 0; border: 1px solid var(--line); background: var(--panel2); border-radius: 3px; font: 500 12px var(--font-mono); }
+.pad button:hover { border-color: var(--muted); }
+.empty { color: var(--muted); padding: 22px 4px; text-align: left; }
+.empty b { display: block; color: var(--ink); font: 600 18px var(--font-display); letter-spacing: .02em; margin-bottom: 4px; }
+
+.search { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 7px 9px; margin: 8px 0; }
+table.list { width: 100%; border-collapse: collapse; }
+table.list th { text-align: left; font: 600 12px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 4px 4px; border-bottom: 1px solid var(--line); }
+table.list td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.list tr.pick { cursor: pointer; }
+table.list tr.pick:hover td { background: var(--panel2); }
+table.list tr.on td { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+table.list td.n, table.list th.n { text-align: right; font-family: var(--font-mono); font-size: 13px; white-space: nowrap; }
+table.list td.name { min-width: 0; overflow-wrap: anywhere; }
+table.list td.name small { display: block; color: var(--muted); font: 11px var(--font-mono); }
+table.list tr.done td.name, table.list tr.done td.n { color: var(--muted); text-decoration: line-through; }
+.sw.s { width: 14px; height: 14px; display: inline-block; vertical-align: middle; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+.progress { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 6px 0 8px; }
+.progress i { display: block; height: 100%; background: var(--good); width: 0; }
+.tot { display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 13px; flex-wrap: wrap; }
+
+/* Live-Abgleich */
+.live-row { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px; align-items: center; margin-bottom: 8px; }
+.live-row label { color: var(--muted); font: 600 12px var(--font-display); letter-spacing: .08em; text-transform: uppercase; }
+select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 6px 8px; }
+.chk { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 6px; }
+.stack { display: flex; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+.stack i { display: block; height: 100%; }
+.stack .ok { background: var(--good); } .stack .bad { background: var(--bad); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.err { color: var(--bad); font-size: 12px; margin: 6px 0 0; }
+.tag { font: 600 11px var(--font-mono); padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
+.tag.ok { color: var(--good); } .tag.bad { color: var(--bad); } .tag.miss { color: var(--warn); }
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .shell { height: auto; min-height: 100%; }
+  .app { display: flex; flex-direction: column; }
+  .stage { height: 62vh; min-height: 340px; flex: none; }
+  .side { overflow: visible; }
+  .side .sidetabs { order: 1; } .side .pane { order: 2; } .side .sec { order: 3; }
+  .hud { max-width: calc(100% - 20px); bottom: 52px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="shell">
+  <header class="top">
+    <div class="brand"><i></i>Blockplan</div>
+    <div class="file"><b id="fname">Keine Vorlage</b><span id="fmeta"></span></div>
+    <div class="actions">
+      <label class="btn primary" for="file" tabindex="0" id="openlbl">Vorlage öffnen</label>
+      <input id="file" type="file" accept=".litematic,.schem,.nbt,.schematic" hidden>
+      <button class="btn" id="sample" type="button">Beispiel laden</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <section class="stage" id="stage" aria-label="Ansicht der Vorlage">
+      <canvas id="c3d" aria-label="3D-Ansicht"></canvas>
+      <canvas id="c2d" hidden aria-label="Ebenenplan von oben"></canvas>
+      <div class="compass" aria-hidden="true">
+        <svg viewBox="-27 -27 54 54"><g id="needle"><circle r="24" fill="color-mix(in srgb, var(--panel) 85%, transparent)" stroke="var(--line)"/><path d="M0 -20 L5 2 L0 -2 L-5 2 Z" fill="var(--accent)"/><path d="M0 20 L5 -2 L0 2 L-5 -2 Z" fill="var(--muted)"/><text y="-9" x="0" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="700" font-size="9" fill="var(--accent-ink)" dominant-baseline="middle">N</text></g></svg>
+      </div>
+      <div class="zoom" id="zoom2d" hidden>
+        <button class="btn small" type="button" id="zin" aria-label="Vergrößern">+</button>
+        <button class="btn small" type="button" id="zout" aria-label="Verkleinern">−</button>
+        <button class="btn small" type="button" id="zfit">Einpassen</button>
+      </div>
+      <div class="hud" id="hud"></div>
+      <div class="msg" id="msg" role="alert" hidden></div>
+      <div class="drop" id="drop" hidden>Vorlage hier ablegen</div>
+    </section>
+
+    <div class="layerbar" id="layerbar">
+      <div class="seg" role="group" aria-label="Ansicht">
+        <button type="button" id="v3d" aria-pressed="true">3D</button>
+        <button type="button" id="v2d" aria-pressed="false">Plan</button>
+      </div>
+      <div class="seg" role="group" aria-label="Ebenen anzeigen">
+        <button type="button" data-mode="all" aria-pressed="true">Alle</button>
+        <button type="button" data-mode="upto" aria-pressed="false">Bis Ebene</button>
+        <button type="button" data-mode="only" aria-pressed="false">Nur Ebene</button>
+      </div>
+      <div class="range">
+        <button class="btn small step" type="button" id="lprev" aria-label="Ebene tiefer">◀</button>
+        <input type="range" id="lslider" min="0" max="0" value="0" aria-label="Ebene">
+        <button class="btn small step" type="button" id="lnext" aria-label="Ebene höher">▶</button>
+      </div>
+      <div class="readout" id="lread"></div>
+    </div>
+
+    <aside class="side" aria-label="Messprotokoll">
+      <div class="sec">
+        <h2>Vorlage</h2>
+        <dl class="kv" id="meta"></dl>
+      </div>
+      <div class="sec">
+        <h2>Startpunkt in der Welt</h2>
+        <div class="origin">
+          <label>X<input type="number" id="ox" value="0" step="1" inputmode="numeric"></label>
+          <label>Y<input type="number" id="oy" value="0" step="1" inputmode="numeric"></label>
+          <label>Z<input type="number" id="oz" value="0" step="1" inputmode="numeric"></label>
+        </div>
+        <p class="hint">Ecke der Vorlage mit den kleinsten X-, Y- und Z-Werten. Daraus werden die Weltkoordinaten jedes Blocks berechnet.</p>
+        <div class="row"><button class="btn small" type="button" id="rotl" title="90° gegen den Uhrzeigersinn">⟲ 90°</button><button class="btn small" type="button" id="rotr" title="90° im Uhrzeigersinn">⟳ 90°</button><span class="hint" id="rotinfo" style="margin:0;align-self:center"></span></div>
+      </div>
+      <div class="sec" id="livesec" hidden>
+        <h2>Live-Abgleich mit deiner Welt</h2>
+        <div class="live-row"><label for="world">Welt</label><select id="world"><option value="">Welt wählen …</option></select></div>
+        <div class="live-row"><label for="dim">Dimension</label><select id="dim"><option value="overworld">Oberwelt</option><option value="nether">Nether</option><option value="end">Ende</option></select></div>
+        <div class="row" style="margin-top:0">
+          <button class="btn small" id="livego" type="button">Jetzt prüfen</button>
+          <button class="btn small" id="liveplayer" type="button" hidden>Startpunkt = letzte Position</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="liveauto" checked> Automatisch alle 10 Sekunden prüfen</label>
+        <label class="chk"><input type="checkbox" id="liveprog" checked> Fortschrittsansicht: Fertiges abdunkeln</label>
+        <label class="chk"><input type="checkbox" id="livestrict" checked> Ausrichtung vergleichen (Treppen, Achsen)</label>
+        <label class="chk"><input type="checkbox" id="envon"> Welt-Umgebung in der 3D-Ansicht zeigen</label>
+        <div id="envopts" hidden>
+          <div class="row" style="margin-top:4px"><label class="chk">Radius <select id="envr" style="width:auto"><option value="32">32</option><option value="48" selected>48</option><option value="96">96</option></select> Blöcke</label></div>
+          <label class="chk"><input type="checkbox" id="envpick"> Klick auf den Boden setzt den Startpunkt</label>
+          <p class="hint" id="envinfo"></p>
+        </div>
+        <div id="livestat" aria-live="polite"></div>
+      </div>
+      <div class="sidetabs" role="tablist">
+        <button role="tab" type="button" id="tb-block" aria-selected="true" data-tab="block">Block</button>
+        <button role="tab" type="button" id="tb-mat" aria-selected="false" data-tab="mat">Material</button>
+        <button role="tab" type="button" id="tb-layer" aria-selected="false" data-tab="layer">Ebenen</button>
+        <button role="tab" type="button" id="tb-cmd" aria-selected="false" data-tab="cmd">Befehle</button>
+      </div>
+      <div class="pane" id="pane"></div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/*__CORE__*/
+</script>
+<script>
+(function () {
+  'use strict';
+  const B = Blockplan;
+  const $ = (s) => document.querySelector(s);
+  const nf = new Intl.NumberFormat('de-DE');
+  const S = {
+    model: null, mesh: null, mats: null, itemIdx: null, layerCounts: null,
+    origin: [0, 0, 0], mode: 'all', layer: 0, sel: null, hover: null, hl: null, hlItem: null,
+    view: '3d', tab: 'block', done: new Set(), got: new Set(), query: '', storeKey: null,
+    status: null, progress: true, matRemain: false, matsRemain: null,
+  };
+
+  /* ------------------------------------------------------------ Helfer */
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const pretty = (n) => n.replace(/^[^:]*:/, '').split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const rgb = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const world = (x, y, z) => [S.origin[0] + x, S.origin[1] + y, S.origin[2] + z];
+  const cellIdx = (x, y, z) => { const m = S.model; return m.grid[x + z * m.size[0] + y * m.size[0] * m.size[2]]; };
+  const inside = (x, y, z) => { const s = S.model.size; return x >= 0 && y >= 0 && z >= 0 && x < s[0] && y < s[1] && z < s[2]; };
+  function store(fn) { try { return fn(); } catch (e) { return null; } }
+  function showMsg(t) { const m = $('#msg'); if (!t) { m.hidden = true; return; } m.textContent = t; m.hidden = false; }
+  function copy(text, btn) {
+    const done = () => { if (!btn) return; const o = btn.textContent; btn.textContent = 'Kopiert'; setTimeout(() => { btn.textContent = o; }, 1200); };
+    const fallback = () => {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) { /* nichts */ } ta.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+
+  /* Sichtbarer Ebenenbereich (Gitter-Y, inklusive) */
+  function yRange() {
+    const gy = S.model.size[1];
+    if (S.mode === 'only') return [S.layer, S.layer];
+    if (S.mode === 'upto') return [0, S.layer];
+    return [0, gy - 1];
+  }
+
+  /* ---------------------------------------------------------------- 3D */
+  let renderer = null, scene, camera, controls, opMesh, glMesh, selBox, hovBox, layerFrame, bbox, ground, dirty = true, gl3ok = true;
+  const stage = $('#stage'), c3d = $('#c3d'), c2d = $('#c2d');
+
+  function init3d() {
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: c3d, antialias: true });
+    } catch (e) {
+      gl3ok = false; renderer = null;
+      showMsg('WebGL ist in diesem Browser nicht verfügbar. Der Ebenenplan funktioniert weiterhin.');
+      setView('2d');
+      return;
+    }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(45, 1, 0.1, 6000);
+    controls = new THREE.OrbitControls(camera, c3d);
+    controls.enableDamping = true; controls.dampingFactor = 0.12; controls.screenSpacePanning = true; controls.maxPolarAngle = Math.PI * 0.52;
+    controls.addEventListener('change', () => { dirty = true; });
+    const edge = (color, op) => new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false });
+    const cube = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.04, 1.04, 1.04));
+    selBox = new THREE.LineSegments(cube, edge(0xff7f45, 1)); selBox.visible = false; selBox.renderOrder = 10; scene.add(selBox);
+    hovBox = new THREE.LineSegments(cube, edge(0xffffff, 0.7)); hovBox.visible = false; hovBox.renderOrder = 9; scene.add(hovBox);
+    applyTheme3d();
+    new ResizeObserver(resize).observe(stage);
+    resize();
+    (function tick() {
+      requestAnimationFrame(tick);
+      if (S.view !== '3d' || !renderer) return;
+      const moved = controls.update();
+      if (moved || dirty) { renderer.render(scene, camera); dirty = false; needle(); }
+    })();
+  }
+  function applyTheme3d() {
+    if (!renderer) return;
+    renderer.setClearColor(new THREE.Color(css('--scene') || '#dce3e1'), 1);
+    const acc = new THREE.Color(css('--accent') || '#d9480f');
+    selBox.material.color.copy(acc);
+    hovBox.material.color.set(document.documentElement.matches('[data-theme="dark"]') || (matchMedia('(prefers-color-scheme: dark)').matches && !document.documentElement.matches('[data-theme="light"]')) ? 0xffffff : 0x13232b);
+    if (layerFrame) layerFrame.material.color.copy(acc);
+    if (ground) { ground.material.color.set(css('--muted') || '#566870'); }
+    if (bbox) bbox.material.color.set(css('--muted') || '#566870');
+    if (S.model && (S.hl || S.status) && opMesh) applyHighlight();
+    dirty = true;
+  }
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (renderer) { renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); dirty = true; }
+    if (S.view === '2d') draw2d();
+  }
+  function needle() { if (controls) $('#needle').style.transform = 'rotate(' + (controls.getAzimuthalAngle() * 180 / Math.PI) + 'deg)'; }
+
+  function disposeMesh() {
+    for (const o of [opMesh, glMesh, layerFrame, bbox, ground]) { if (o) { scene.remove(o); o.geometry.dispose(); o.material.dispose(); } }
+    opMesh = glMesh = layerFrame = bbox = ground = null;
+  }
+  function geoFrom(q) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(q.pos.subarray(0, q.n * 12), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(q.col.subarray(0, q.n * 12), 3));
+    g.setIndex(new THREE.BufferAttribute(q.indices(), 1));
+    return g;
+  }
+  function buildScene() {
+    if (!renderer) return;
+    disposeMesh();
+    const [GX, GY, GZ] = S.model.size, me = S.mesh;
+    opMesh = new THREE.Mesh(geoFrom(me.opaque), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    opMesh.frustumCulled = false; scene.add(opMesh);
+    glMesh = new THREE.Mesh(geoFrom(me.glass), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.4, depthWrite: false }));
+    glMesh.frustumCulled = false; glMesh.renderOrder = 2; scene.add(glMesh);
+    /* Rahmen um die Vorlage */
+    bbox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(GX, GY, GZ)), new THREE.LineBasicMaterial({ color: 0x566870, transparent: true, opacity: 0.55 }));
+    bbox.position.set(GX / 2, GY / 2, GZ / 2); scene.add(bbox);
+    /* Bodenraster, jede 5. Linie kräftiger ist nicht möglich mit einem Material, daher nur Blocklinien */
+    const pts = [];
+    for (let x = 0; x <= GX; x++) pts.push(x, 0, 0, x, 0, GZ);
+    for (let z = 0; z <= GZ; z++) pts.push(0, 0, z, GX, 0, z);
+    const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    ground = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x566870, transparent: true, opacity: GX * GZ > 40000 ? 0.0 : 0.16 }));
+    scene.add(ground);
+    const fr = new THREE.BufferGeometry();
+    fr.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, GX, 0, 0, GX, 0, GZ, 0, 0, GZ], 3));
+    layerFrame = new THREE.LineLoop(fr, new THREE.LineBasicMaterial({ color: 0xd9480f, depthTest: false }));
+    layerFrame.renderOrder = 8; scene.add(layerFrame);
+    applyTheme3d();
+    applyRange3d();
+    fitCamera();
+  }
+  function fitCamera() {
+    if (!renderer) return;
+    const [GX, GY, GZ] = S.model.size;
+    const c = new THREE.Vector3(GX / 2, GY / 2.2, GZ / 2);
+    const r = Math.max(GX, GY * 1.2, GZ);
+    const dir = new THREE.Vector3(0.75, 0.62, 1.05).normalize();
+    camera.position.copy(c).addScaledVector(dir, r * 1.55 + 6);
+    camera.near = Math.max(0.1, r / 500); camera.far = r * 12 + 200; camera.updateProjectionMatrix();
+    controls.target.copy(c); controls.minDistance = 2; controls.maxDistance = r * 6 + 40;
+    controls.update(); dirty = true;
+  }
+  function applyRange3d() {
+    if (!renderer || !opMesh) return;
+    const GY = S.model.size[1];
+    let a = 0, b = GY;
+    if (S.mode === 'upto') b = S.layer + 1;
+    if (S.mode === 'only') { a = S.layer; b = S.layer + 1; }
+    const so = S.mesh.startsOpaque, sg = S.mesh.startsGlass;
+    envRange();
+    opMesh.geometry.setDrawRange(so[a] * 6, (so[b] - so[a]) * 6);
+    glMesh.geometry.setDrawRange(sg[a] * 6, (sg[b] - sg[a]) * 6);
+    layerFrame.visible = S.mode !== 'all';
+    layerFrame.position.y = S.layer + 1;
+    dirty = true;
+  }
+  function applyHighlight() {
+    if (!renderer || !opMesh) return;
+    const st = S.progress ? S.status : null;
+    const sc = new THREE.Color(css('--scene') || '#dce3e1');
+    for (const [q, mesh] of [[S.mesh.opaque, opMesh], [S.mesh.glass, glMesh]]) {
+      if (!q.n) continue;
+      if (!q.base) q.base = Float32Array.from(q.col.subarray(0, q.n * 12));
+      const col = q.col, base = q.base, hl = S.hl;
+      for (let i = 0; i < q.n; i++) {
+        const on = !hl || hl.has(q.pal[i]);
+        const s = st ? st[q.cell[i]] : 0;
+        let f = 1, ar = 0, ag = 0, ab = 0;
+        if (s === 1) { f = 0.3; ar = sc.r * 0.7; ag = sc.g * 0.7; ab = sc.b * 0.7; }
+        else if (s === 3) { f = 0.45; ar = 0.62; ag = 0.07; ab = 0.07; }
+        if (!on) { f = 0.14; ar = sc.r * 0.86; ag = sc.g * 0.86; ab = sc.b * 0.86; }
+        for (let k = 0; k < 12; k += 3) {
+          col[i * 12 + k] = base[i * 12 + k] * f + ar;
+          col[i * 12 + k + 1] = base[i * 12 + k + 1] * f + ag;
+          col[i * 12 + k + 2] = base[i * 12 + k + 2] * f + ab;
+        }
+      }
+      mesh.geometry.attributes.color.needsUpdate = true;
+    }
+    dirty = true;
+  }
+  function placeBox(box, c) {
+    if (!box) return;
+    if (!c) { box.visible = false; return; }
+    box.position.set(c.x + 0.5, c.y + 0.5, c.z + 0.5); box.visible = true;
+  }
+  function syncBoxes() {
+    if (!renderer) return;
+    const vis = (c) => c && S.mode !== 'all' ? (S.mode === 'only' ? c.y === S.layer : c.y <= S.layer) : c;
+    placeBox(selBox, vis(S.sel) ? S.sel : null);
+    placeBox(hovBox, vis(S.hover) && !(S.sel && S.hover && S.sel.x === S.hover.x && S.sel.y === S.hover.y && S.sel.z === S.hover.z) ? S.hover : null);
+    dirty = true;
+  }
+
+  /* Picking im 3D-Fenster */
+  function pickRay(ev) {
+    camera.updateMatrixWorld();
+    const r = c3d.getBoundingClientRect();
+    const nx = ((ev.clientX - r.left) / r.width) * 2 - 1, ny = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    const p = new THREE.Vector3(nx, ny, 0.5).unproject(camera);
+    const o = camera.position, d = p.sub(o).normalize();
+    const [y0, y1] = yRange();
+    return B.raycast(S.model, [o.x, o.y, o.z], [d.x, d.y, d.z], y0, y1);
+  }
+  let hoverQueued = false, lastMove = null;
+  c3d.addEventListener('pointermove', (ev) => {
+    if (!S.model || ev.buttons) return;
+    lastMove = ev;
+    if (hoverQueued) return;
+    hoverQueued = true;
+    requestAnimationFrame(() => { hoverQueued = false; const h = pickRay(lastMove); setHover(h); });
+  });
+  c3d.addEventListener('pointerleave', () => setHover(null));
+  let down = null;
+  c3d.addEventListener('pointerdown', (ev) => { down = { x: ev.clientX, y: ev.clientY, t: performance.now() }; });
+  c3d.addEventListener('pointerup', (ev) => {
+    if (!down || !S.model || ev.button !== 0) return;
+    const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
+    down = null;
+    if (moved > 5) return;
+    if (ENV.on && ENV.pick && envPick(ev)) return;
+    const h = pickRay(ev);
+    select(h ? { x: h.x, y: h.y, z: h.z } : null);
+  });
+
+  /* ---------------------------------------------------------------- 2D */
+  const V2 = { cell: 16, px: 0, py: 0, fitted: false };
+  const M2 = { left: 44, top: 26 };
+  const pointers = new Map();
+  function layerBelowGhost() { return S.layer > 0; }
+  function draw2d() {
+    if (!S.model || S.view !== '2d') return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = stage.clientWidth, H = stage.clientHeight;
+    if (c2d.width !== Math.round(W * dpr) || c2d.height !== Math.round(H * dpr)) { c2d.width = Math.round(W * dpr); c2d.height = Math.round(H * dpr); }
+    const ctx = c2d.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const [GX, GY, GZ] = S.model.size, grid = S.model.grid, pal = S.model.palette;
+    const y = Math.min(S.layer, GY - 1), cs = V2.cell;
+    ctx.fillStyle = css('--scene'); ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(M2.left, M2.top, W - M2.left, H - M2.top); ctx.clip();
+    ctx.translate(M2.left + V2.px, M2.top + V2.py);
+    const x0 = Math.max(0, Math.floor(-V2.px / cs)), x1 = Math.min(GX, Math.ceil((W - M2.left - V2.px) / cs));
+    const z0 = Math.max(0, Math.floor(-V2.py / cs)), z1 = Math.min(GZ, Math.ceil((H - M2.top - V2.py) / cs));
+    ctx.fillStyle = css('--panel'); ctx.fillRect(0, 0, GX * cs, GZ * cs);
+    const hl = S.hl, stat2 = S.progress ? S.status : null;
+    for (let z = z0; z < z1; z++) {
+      for (let x = x0; x < x1; x++) {
+        const cellI = x + z * GX + y * GX * GZ, idx = grid[cellI];
+        if (idx) {
+          const e = pal[idx], on = !hl || hl.has(idx), sv = stat2 ? stat2[cellI] : 0;
+          ctx.globalAlpha = (on ? 1 : 0.18) * (sv === 1 ? 0.28 : 1);
+          ctx.fillStyle = rgb(e.color);
+          if (e.shape.t === 'cube' && !e.shape.pass) ctx.fillRect(x * cs, z * cs, cs, cs);
+          else if (e.shape.pass) { ctx.globalAlpha *= 0.55; ctx.fillRect(x * cs, z * cs, cs, cs); }
+          else { ctx.globalAlpha *= 0.35; ctx.fillRect(x * cs, z * cs, cs, cs); ctx.globalAlpha = (on ? 1 : 0.18) * (sv === 1 ? 0.28 : 1); const i = Math.max(1, cs * 0.18); ctx.fillRect(x * cs + i, z * cs + i, cs - 2 * i, cs - 2 * i); }
+          if (sv === 3) { ctx.globalAlpha = 0.55; ctx.fillStyle = css('--bad'); ctx.fillRect(x * cs, z * cs, cs, cs); ctx.globalAlpha = 1; ctx.strokeStyle = css('--bad'); ctx.lineWidth = Math.max(1.5, cs * 0.1); ctx.strokeRect(x * cs + 1, z * cs + 1, cs - 2, cs - 2); }
+        } else if (layerBelowGhost()) {
+          const below = grid[x + z * GX + (y - 1) * GX * GZ];
+          if (below) { ctx.globalAlpha = 0.2; ctx.fillStyle = rgb(pal[below].color); ctx.fillRect(x * cs, z * cs, cs, cs); }
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    /* Gitter */
+    const line = css('--line');
+    ctx.lineWidth = 1;
+    if (cs >= 7) {
+      ctx.strokeStyle = line; ctx.globalAlpha = 0.55; ctx.beginPath();
+      for (let x = x0; x <= x1; x++) { ctx.moveTo(x * cs + 0.5, z0 * cs); ctx.lineTo(x * cs + 0.5, z1 * cs); }
+      for (let z = z0; z <= z1; z++) { ctx.moveTo(x0 * cs, z * cs + 0.5); ctx.lineTo(x1 * cs, z * cs + 0.5); }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = css('--muted'); ctx.globalAlpha = 0.6; ctx.beginPath();
+    for (let x = Math.ceil(x0 / 5) * 5; x <= x1; x += 5) { ctx.moveTo(x * cs + 0.5, z0 * cs); ctx.lineTo(x * cs + 0.5, z1 * cs); }
+    for (let z = Math.ceil(z0 / 5) * 5; z <= z1; z += 5) { ctx.moveTo(x0 * cs, z * cs + 0.5); ctx.lineTo(x1 * cs, z * cs + 0.5); }
+    ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5; ctx.strokeRect(0, 0, GX * cs, GZ * cs);
+    /* Auswahl und Hover */
+    const acc = css('--accent');
+    if (S.hover && S.hover.y === y) { ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5; ctx.strokeRect(S.hover.x * cs + 1, S.hover.z * cs + 1, cs - 2, cs - 2); }
+    if (S.sel && S.sel.y === y) { ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.strokeRect(S.sel.x * cs + 1.5, S.sel.z * cs + 1.5, cs - 3, cs - 3); }
+    ctx.restore();
+    /* Lineale mit Weltkoordinaten */
+    ctx.fillStyle = css('--panel'); ctx.fillRect(0, 0, W, M2.top); ctx.fillRect(0, 0, M2.left, H);
+    ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(M2.left, M2.top + 0.5); ctx.lineTo(W, M2.top + 0.5); ctx.moveTo(M2.left + 0.5, M2.top); ctx.lineTo(M2.left + 0.5, H); ctx.stroke();
+    ctx.fillStyle = css('--muted'); ctx.font = '11px ' + css('--font-mono');
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const step = cs >= 26 ? 1 : cs >= 12 ? 5 : cs >= 6 ? 10 : 20;
+    for (let x = Math.ceil(x0 / step) * step; x < x1; x += step) {
+      const sx = M2.left + V2.px + x * cs + (step === 1 ? cs / 2 : 0);
+      if (sx < M2.left || sx > W) continue;
+      ctx.textAlign = step === 1 ? 'center' : 'left'; ctx.fillText(String(S.origin[0] + x), sx + (step === 1 ? 0 : 2), M2.top / 2);
+    }
+    ctx.textAlign = 'right';
+    for (let z = Math.ceil(z0 / step) * step; z < z1; z += step) {
+      const sy = M2.top + V2.py + z * cs + (step === 1 ? cs / 2 : 7);
+      if (sy < M2.top || sy > H) continue;
+      ctx.fillText(String(S.origin[2] + z), M2.left - 4, sy);
+    }
+    ctx.textAlign = 'center'; ctx.fillStyle = css('--accent'); ctx.font = '600 11px ' + css('--font-mono');
+    ctx.fillText('X→', M2.left / 2, M2.top / 2); ctx.fillText('N↑', M2.left / 2, M2.top + 12);
+  }
+  function fit2d() {
+    if (!S.model) return;
+    const W = stage.clientWidth - M2.left - 16, H = stage.clientHeight - M2.top - 16;
+    const [GX, , GZ] = S.model.size;
+    V2.cell = Math.max(2, Math.min(40, Math.floor(Math.min(W / GX, H / GZ) * 10) / 10));
+    V2.px = Math.round((W + 16 - GX * V2.cell) / 2); V2.py = Math.round((H + 16 - GZ * V2.cell) / 2);
+    V2.fitted = true; draw2d();
+  }
+  function zoom2d(f, cx, cy) {
+    const W = stage.clientWidth, H = stage.clientHeight;
+    if (cx === undefined) { cx = (W + M2.left) / 2; cy = (H + M2.top) / 2; }
+    const old = V2.cell, nw = Math.max(2, Math.min(80, old * f));
+    const mx = (cx - M2.left - V2.px) / old, my = (cy - M2.top - V2.py) / old;
+    V2.cell = nw; V2.px = cx - M2.left - mx * nw; V2.py = cy - M2.top - my * nw;
+    draw2d();
+  }
+  function cell2d(ev) {
+    const r = c2d.getBoundingClientRect();
+    const mx = ev.clientX - r.left - M2.left - V2.px, my = ev.clientY - r.top - M2.top - V2.py;
+    if (ev.clientX - r.left < M2.left || ev.clientY - r.top < M2.top) return null;
+    const x = Math.floor(mx / V2.cell), z = Math.floor(my / V2.cell);
+    if (!S.model || x < 0 || z < 0 || x >= S.model.size[0] || z >= S.model.size[2]) return null;
+    return { x, y: S.layer, z };
+  }
+  let drag2 = null, pinch = null;
+  c2d.addEventListener('pointerdown', (ev) => {
+    c2d.setPointerCapture(ev.pointerId); pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pointers.size === 1) drag2 = { x: ev.clientX, y: ev.clientY, px: V2.px, py: V2.py, moved: 0 };
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cell: V2.cell }; drag2 = null; }
+  });
+  c2d.addEventListener('pointermove', (ev) => {
+    if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const r = c2d.getBoundingClientRect();
+      zoom2d((pinch.cell * d / pinch.d) / V2.cell, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
+      return;
+    }
+    if (drag2 && pointers.size === 1) {
+      const dx = ev.clientX - drag2.x, dy = ev.clientY - drag2.y; drag2.moved = Math.max(drag2.moved, Math.hypot(dx, dy));
+      if (drag2.moved > 4) { V2.px = drag2.px + dx; V2.py = drag2.py + dy; draw2d(); }
+    } else if (!ev.buttons) setHover(cell2d(ev));
+  });
+  const end2 = (ev) => {
+    const wasDrag = drag2 && drag2.moved > 4;
+    pointers.delete(ev.pointerId);
+    if (ev.type === 'pointerup' && drag2 && !wasDrag && !pinch) select(cell2d(ev));
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) drag2 = null;
+  };
+  c2d.addEventListener('pointerup', end2); c2d.addEventListener('pointercancel', end2);
+  c2d.addEventListener('pointerleave', () => { if (!pointers.size) setHover(null); });
+  c2d.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    const r = c2d.getBoundingClientRect();
+    zoom2d(ev.deltaY < 0 ? 1.15 : 1 / 1.15, ev.clientX - r.left, ev.clientY - r.top);
+  }, { passive: false });
+
+  /* ----------------------------------------------------- Auswahl, HUD */
+  function updateHud() {
+    const hud = $('#hud'), c = S.hover || S.sel;
+    if (!c || !S.model) { hud.textContent = ''; return; }
+    const e = S.model.palette[cellIdx(c.x, c.y, c.z)], w = world(c.x, c.y, c.z);
+    hud.innerHTML = esc(e.air ? 'Luft' : pretty(e.name)) + (S.hover ? '' : ' (gewählt)') + '<br>Vorlage ' + c.x + ' ' + c.y + ' ' + c.z + ' · Welt ' + w.join(' ');
+  }
+  function setHover(c) {
+    const same = (a, b) => (!a && !b) || (a && b && a.x === b.x && a.y === b.y && a.z === b.z);
+    if (same(c, S.hover)) return;
+    S.hover = c;
+    updateHud();
+    syncBoxes(); if (S.view === '2d') draw2d();
+  }
+  function select(c) {
+    if (c && !inside(c.x, c.y, c.z)) c = null;
+    S.sel = c;
+    updateHud();
+    syncBoxes(); if (S.view === '2d') draw2d();
+    S.tab = 'block'; renderTabs(); renderPane();
+  }
+  function step(dx, dy, dz) {
+    if (!S.sel) return;
+    const c = { x: S.sel.x + dx, y: S.sel.y + dy, z: S.sel.z + dz };
+    if (!inside(c.x, c.y, c.z)) return;
+    if (S.mode === 'only' && c.y !== S.layer) setLayer(c.y);
+    else if (S.mode === 'upto' && c.y > S.layer) setLayer(c.y);
+    select(c);
+  }
+
+  /* ------------------------------------------------------ Ebenenleiste */
+  function setLayer(y) {
+    const gy = S.model.size[1];
+    S.layer = Math.max(0, Math.min(gy - 1, y));
+    $('#lslider').value = S.layer;
+    updateLayerRead(); applyRange3d(); syncBoxes(); draw2d();
+    if (S.tab === 'layer' || S.tab === 'cmd') renderPane();
+  }
+  function setMode(m) {
+    S.mode = m;
+    document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+    updateLayerRead(); applyRange3d(); syncBoxes(); draw2d();
+  }
+  function updateLayerRead() {
+    const gy = S.model ? S.model.size[1] : 0;
+    if (!S.model) { $('#lread').textContent = ''; return; }
+    const w = S.origin[1] + S.layer;
+    $('#lread').textContent = S.mode === 'all' ? 'Alle ' + gy + ' Ebenen' : 'Y ' + w + ' · Ebene ' + (S.layer + 1) + ' von ' + gy + ' · ' + nf.format(S.layerCounts[S.layer]) + ' Blöcke';
+  }
+  $('#layerbar').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode);
+  });
+  $('#lslider').addEventListener('input', (ev) => { if (S.mode === 'all') setMode('only'); setLayer(+ev.target.value); });
+  $('#lprev').addEventListener('click', () => { if (S.mode === 'all') setMode('only'); setLayer(S.layer - 1); });
+  $('#lnext').addEventListener('click', () => { if (S.mode === 'all') setMode('only'); setLayer(S.layer + 1); });
+
+  /* ------------------------------------------------------- Seitenleiste */
+  function renderMeta() {
+    const m = S.model; if (!m) { $('#meta').innerHTML = ''; return; }
+    const rows = [['Größe', m.size.join(' × ')], ['Blöcke', nf.format(m.total)], ['Materialien', S.mats.length], ['Ebenen', m.size[1]], ['Format', m.format]];
+    if (m.author) rows.splice(1, 0, ['Autor', esc(m.author)]);
+    $('#meta').innerHTML = rows.map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>').join('');
+    $('#fname').textContent = m.name;
+    $('#fmeta').textContent = m.size.join(' × ') + ' Blöcke · ' + nf.format(m.total) + ' belegt';
+  }
+  function renderTabs() {
+    document.querySelectorAll('.sidetabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)));
+  }
+  $('.sidetabs').addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (b) { S.tab = b.dataset.tab; renderTabs(); renderPane(); } });
+
+  function fmtStacks(count, stack) {
+    if (stack === 1) return nf.format(count);
+    const st = Math.floor(count / stack), rest = count % stack;
+    const parts = [];
+    if (st) parts.push(st + ' St.');
+    if (rest) parts.push(String(rest));
+    let s = parts.join(' + ') || '0';
+    if (count >= stack * 27) s += ' · ' + (Math.ceil(count / (stack * 27))) + ' Shulker';
+    return s;
+  }
+
+  function renderPane() {
+    const pane = $('#pane');
+    if (!S.model) { pane.innerHTML = '<div class="empty"><b>Noch keine Vorlage</b>Öffne eine .litematic, .schem oder .nbt oder lade das Beispiel.</div>'; return; }
+    if (S.tab === 'block') return paneBlock(pane);
+    if (S.tab === 'mat') return paneMat(pane);
+    if (S.tab === 'cmd') return paneCmd(pane);
+    return paneLayers(pane);
+  }
+
+  function paneBlock(pane) {
+    const c = S.sel;
+    if (!c) {
+      pane.innerHTML = '<div class="empty"><b>Kein Block gewählt</b>Klicke in der 3D-Ansicht oder im Ebenenplan auf einen Block. Mit den Pfeiltasten gehst du von dort aus Block für Block weiter.</div>' +
+        '<p class="hint">Tasten: ←/→ X, ↑/↓ Z, Bild↑/Bild↓ Y, [ und ] wechseln die Ebene.</p>';
+      return;
+    }
+    const idx = cellIdx(c.x, c.y, c.z), e = S.model.palette[idx], w = world(c.x, c.y, c.z);
+    const props = Object.entries(e.props || {});
+    const same = S.model.counts[idx];
+    const on = S.hl && S.hl.size === 1 && S.hl.has(idx);
+    pane.innerHTML =
+      '<div class="blockname"><span class="sw" style="background:' + (e.air ? 'transparent' : rgb(e.color)) + '"></span><div><b>' + esc(e.air ? 'Luft' : pretty(e.name)) + '</b><code>' + esc(e.name) + '</code></div></div>' +
+      liveBlockLine(c, idx) +
+      (props.length ? '<div class="props">' + props.map(([k, v]) => '<span>' + esc(k) + ': ' + esc(v) + '</span>').join('') + '</div>' : '') +
+      '<table class="coords"><tr><th></th><td>X</td><td>Y</td><td>Z</td></tr>' +
+      '<tr><th>Vorlage</th><td><b>' + c.x + '</b></td><td><b>' + c.y + '</b></td><td><b>' + c.z + '</b></td></tr>' +
+      '<tr class="world"><th>Welt</th><td><b>' + w[0] + '</b></td><td><b>' + w[1] + '</b></td><td><b>' + w[2] + '</b></td></tr></table>' +
+      '<div class="row"><button class="btn small" data-act="c-xyz" type="button">Koordinaten kopieren</button>' +
+      '<button class="btn small" data-act="c-tp" type="button">/tp</button>' +
+      (e.air ? '' : '<button class="btn small" data-act="c-set" type="button">/setblock</button>') + '</div>' +
+      '<div class="pad" role="group" aria-label="Zum Nachbarblock">' +
+      [['X−', -1, 0, 0], ['X+', 1, 0, 0], ['Y−', 0, -1, 0], ['Y+', 0, 1, 0], ['Z−', 0, 0, -1], ['Z+', 0, 0, 1]].map((a) => '<button type="button" data-step="' + a[1] + ',' + a[2] + ',' + a[3] + '" aria-label="Nachbar ' + a[0] + '">' + a[0] + '</button>').join('') + '</div>' +
+      (e.air ? '' : '<p class="hint">' + nf.format(same) + ' Blöcke dieser Art in der Vorlage. Treppen, Türen und Zäune sind vereinfacht gezeichnet, maßgeblich sind Name und Eigenschaften oben.</p><div class="row"><button class="btn small" type="button" data-act="hl" aria-pressed="' + on + '">Nur diese Art hervorheben</button></div>');
+  }
+  $('#pane').addEventListener('click', (ev) => {
+    const t = ev.target.closest('button, tr.pick, input'); if (!t) return;
+    if (t.dataset.step) { step(...t.dataset.step.split(',').map(Number)); return; }
+    const act = t.dataset.act;
+    if (act && S.sel) {
+      const c = S.sel, w = world(c.x, c.y, c.z), e = S.model.palette[cellIdx(c.x, c.y, c.z)];
+      if (act === 'c-xyz') copy(w.join(' '), t);
+      if (act === 'c-tp') copy('/tp @s ' + w.join(' '), t);
+      if (act === 'c-set') copy('/' + B.setblockCommand(e, w[0], w[1], w[2]), t);
+      if (act === 'hl') { setHighlight(S.hl && S.hl.size === 1 && S.hl.has(cellIdx(c.x, c.y, c.z)) ? null : new Set([cellIdx(c.x, c.y, c.z)]), null); renderPane(); }
+    }
+    if (act === 'copy-mats') copyMats(t);
+    if (act === 'mat-all' || act === 'mat-rem') { S.matRemain = act === 'mat-rem'; renderPane(); }
+    if (act === 'clear-hl') { setHighlight(null, null); renderPane(); }
+  });
+
+  function setHighlight(set, item) {
+    S.hl = set; S.hlItem = item; applyHighlight(); draw2d();
+  }
+
+  function paneMat(pane) {
+    const q = S.query.toLowerCase();
+    const useRemain = LIVE.on && S.matRemain && S.matsRemain;
+    const all = useRemain ? S.matsRemain : S.mats;
+    const list = all.filter((m) => !q || m.item.toLowerCase().includes(q) || pretty(m.item).toLowerCase().includes(q));
+    const gotN = all.filter((m) => S.got.has(m.item)).length;
+    const sumN = all.reduce((a, m) => a + m.count, 0);
+    pane.innerHTML =
+      (LIVE.on && S.matsRemain ? '<div class="seg" role="group" aria-label="Umfang" style="margin-bottom:10px"><button type="button" data-act="mat-all" aria-pressed="' + !useRemain + '">Gesamte Vorlage</button><button type="button" data-act="mat-rem" aria-pressed="' + !!useRemain + '">Fehlt noch</button></div>' : '') +
+      '<div class="tot"><span>' + nf.format(sumN) + ' Blöcke</span><span>' + all.length + ' Materialien</span><span>' + gotN + ' gesammelt</span></div>' +
+      '<div class="progress"><i style="width:' + (all.length ? gotN / all.length * 100 : 0) + '%"></i></div>' +
+      '<div class="row" style="margin-top:0"><button class="btn small" type="button" data-act="copy-mats">Liste kopieren</button>' +
+      (S.hl ? '<button class="btn small" type="button" data-act="clear-hl">Hervorhebung aus</button>' : '') + '</div>' +
+      '<input class="search" id="msearch" type="search" placeholder="Material suchen" value="' + esc(S.query) + '" aria-label="Material suchen">' +
+      '<table class="list"><thead><tr><th></th><th>Material</th><th class="n">Menge</th><th class="n">Stacks</th></tr></thead><tbody>' +
+      list.map((m) => '<tr class="pick' + (S.hlItem === m.item ? ' on' : '') + (S.got.has(m.item) ? ' done' : '') + '" data-item="' + esc(m.item) + '">' +
+        '<td><input type="checkbox" data-got="' + esc(m.item) + '" aria-label="' + esc(pretty(m.item)) + ' gesammelt"' + (S.got.has(m.item) ? ' checked' : '') + '></td>' +
+        '<td class="name"><span class="sw s" style="background:' + rgb(B.baseColor(m.item)) + '"></span> ' + esc(pretty(m.item)) + '</td>' +
+        '<td class="n">' + nf.format(m.count) + '</td><td class="n">' + esc(fmtStacks(m.count, m.stack)) + '</td></tr>').join('') +
+      '</tbody></table>' + (list.length ? '' : '<p class="hint">Kein Material passt zur Suche.</p>') +
+      '<p class="hint">Zeile anklicken hebt alle Blöcke dieses Materials hervor. Slabs, Türen, Betten und Wasser sind wie im Spiel gezählt.</p>';
+    const inp = $('#msearch');
+    inp.addEventListener('input', () => { S.query = inp.value; const pos = inp.selectionStart; paneMat(pane); const n = $('#msearch'); n.focus(); n.setSelectionRange(pos, pos); });
+  }
+  $('#pane').addEventListener('change', (ev) => {
+    const g = ev.target.dataset && ev.target.dataset.got;
+    if (g) { if (ev.target.checked) S.got.add(g); else S.got.delete(g); save(); renderPane(); return; }
+    const d = ev.target.dataset && ev.target.dataset.done;
+    if (d !== undefined) { const y = +d; if (ev.target.checked) S.done.add(y); else S.done.delete(y); save(); renderPane(); }
+  });
+  $('#pane').addEventListener('click', (ev) => {
+    if (ev.target.matches('input[type=checkbox]')) return;
+    const tr = ev.target.closest('tr.pick'); if (!tr) return;
+    if (tr.dataset.item) {
+      const item = tr.dataset.item;
+      if (S.hlItem === item) setHighlight(null, null);
+      else {
+        const set = new Set();
+        S.model.palette.forEach((e, i) => { if (!e.air && B.itemsFor(e).some((it) => it.item === item)) set.add(i); });
+        setHighlight(set, item);
+      }
+      renderPane();
+    } else if (tr.dataset.layer !== undefined) {
+      if (S.mode === 'all') setMode('only');
+      setLayer(+tr.dataset.layer);
+    }
+  });
+
+  /* ------------------------------------------------------ Befehle (Export) */
+  const CMD = { log: '', scope: 'all', content: 'all', clear: false, res: null, key: '', writeMsg: '' };
+  const gameVer = () => (LIVE.active && LIVE.active.level && LIVE.active.level.version) || null;
+  const knownSet = () => { const a = LIVE.active; if (!a || !a.blocks) return null; if (!a._set) a._set = new Set(a.blocks); return a._set; };
+  function cmdCompute() {
+    const [y0, y1] = CMD.scope === 'vis' ? yRange() : [0, S.model.size[1] - 1];
+    const onlyMiss = CMD.content === 'miss' && LIVE.on && S.status;
+    const r = B.exportCommands(S.model, { origin: S.origin, y0, y1, status: onlyMiss ? S.status : null, clear: CMD.clear, gameVersion: gameVer(), known: knownSet() });
+    CMD.res = r; CMD.files = B.splitFiles(r.commands, 30000);
+    return r;
+  }
+  function paneCmd(pane) {
+    const canMiss = LIVE.on && !!S.status;
+    if (CMD.content === 'miss' && !canMiss) CMD.content = 'all';
+    const r = cmdCompute(), n = r.stats.total, nf2 = nf.format;
+    const seg = (key, val, label) => '<button type="button" data-cmd="' + key + '" data-val="' + val + '" aria-pressed="' + (CMD[key] === val) + '">' + label + '</button>';
+    const prev = r.commands.slice(0, 40).map(esc).join('\n');
+    pane.innerHTML =
+      '<div class="seg" role="group" aria-label="Ebenen" style="margin-bottom:8px">' + seg('scope', 'all', 'Alle Ebenen') + seg('scope', 'vis', 'Sichtbare Ebenen') + '</div>' +
+      (canMiss ? '<div class="seg" role="group" aria-label="Inhalt" style="margin-bottom:8px">' + seg('content', 'all', 'Ganze Vorlage') + seg('content', 'miss', 'Nur fehlend/falsch') + '</div>' : '<p class="hint" style="margin:0 0 8px">„Nur fehlend/falsch“ gibt es mit dem Live-Abgleich (lokale Version).</p>') +
+      '<label class="chk"><input type="checkbox" data-cmd-clear' + (CMD.clear ? ' checked' : '') + '> Bereich vorher leeren (Luft)</label>' + (CMD.clear ? '<p class="hint" style="color:var(--bad)">Löscht alles im Bereich der Vorlage in deiner Welt, auch Gelände und Bäume. Mach vorher ein Backup der Welt.</p>' : '') +
+      '<p style="margin:10px 0 0"><b>' + nf2(n) + '</b> Befehle für <b>' + nf2(r.stats.blocks) + '</b> Blöcke' +
+      '<br><small class="hint">' + nf2(r.stats.fill) + ' fill, ' + nf2(r.stats.setblock) + ' setblock' + (r.stats.clear ? ', ' + nf2(r.stats.clear) + ' zum Leeren' : '') + ' · ' + CMD.files.length + ' Datei(en)</small></p>' +
+      (r.stats.skipped.length ? '<p class="hint" style="color:var(--bad)">Übersprungen, weil dieses Minecraft sie nicht kennt: ' + esc(r.stats.skipped.join(', ')) + '</p>' : '') +
+      '<div class="row">' +
+      (n && n <= 300 ? '<button class="btn small" type="button" data-cmd-act="copy">Befehle kopieren</button>' : '') +
+      (LIVE.on && n ? '<button class="btn small primary" type="button" data-cmd-act="zip">Datapack (.zip) laden</button>' : '') +
+      (LIVE.on && LIVE.ready && n ? '<button class="btn small" type="button" data-cmd-act="write">In Welt schreiben</button>' : '') + (LIVE.on && LIVE.ready ? '<button class="btn small" type="button" data-cmd-act="log">Fehler im Spiel-Log suchen</button>' : '') + '</div>' + (CMD.log ? '<pre class="cmdprev">' + esc(CMD.log) + '</pre>' : '') +
+      (n > 300 && !LIVE.on ? '<p class="hint">Mehr als 300 Befehle lassen sich nicht sinnvoll einfügen. ZIP-Export und Schreiben in die Welt gibt es in der lokalen Version.</p>' : '') +
+      (CMD.files.length > 1 ? '<p class="hint" style="margin-top:10px"><b>' + CMD.files.length + ' Dateien: der Reihe nach alle ausführen</b>, sonst bleibt der Bau unvollständig. Pro Datei kopieren, im Spiel einfügen, kurz warten:</p><div class="row">' + CMD.files.map((f, i) => '<button class="btn small" type="button" data-fn="build_' + String(i + 1).padStart(3, '0') + '">' + String(i + 1).padStart(3, '0') + '</button>').join('') + '</div>' : '') +
+      (CMD.writeMsg ? '<p class="hint" id="cmdmsg">' + esc(CMD.writeMsg) + '</p>' : '') +
+      '<p class="hint">' + (LIVE.active && LIVE.active.packFormat ? 'Datapack-Format ' + LIVE.active.packFormat.major + ' (aus Minecraft ' + esc(LIVE.active.packFormat.version) + ' gelesen).' : 'Datapack-Format der Spielversion nicht gefunden, es wird ein weiter Bereich eingetragen.') + ' Prüfen mit <code>/datapack list</code>: „blockplan“ muss unter „enabled“ stehen.</p>' +
+      '<p class="hint">Koordinaten sind absolut (Startpunkt + Position). Du musst nahe genug stehen, damit die Chunks geladen sind, und Cheats brauchen. In der Welt: <code>/reload</code>, dann <code>/function blockplan:build_001</code>.</p>' +
+      '<pre class="cmdprev">' + (prev || 'Nichts zu setzen.') + (n > 40 ? '\n… ' + nf2(n - 40) + ' weitere' : '') + '</pre>';
+  }
+  function cmdPack() {
+    const pf = LIVE.active && LIVE.active.packFormat;
+    const o = { description: 'Blockplan: ' + (S.model.name || 'Vorlage') };
+    if (pf) { o.minFormat = pf.major; o.maxFormat = pf.major; }
+    return B.buildDatapack(CMD.files, o);
+  }
+  $('#pane').addEventListener('click', async (ev) => {
+    if (S.tab !== 'cmd') return;
+    const t = ev.target.closest('button'); if (!t) return;
+    if (t.dataset.cmd) { CMD[t.dataset.cmd] = t.dataset.val; CMD.writeMsg = ''; renderPane(); return; }
+    if (t.dataset.fn) { copy('/function blockplan:' + t.dataset.fn, t); return; }
+    const a = t.dataset.cmdAct; if (!a) return;
+    if (a === 'copy') { copy(CMD.res.commands.join('\n'), t); return; }
+    if (a === 'zip') {
+      const blob = new Blob([B.makeZip(cmdPack())], { type: 'application/zip' });
+      const l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'blockplan-datapack.zip';
+      document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
+      CMD.writeMsg = 'ZIP heruntergeladen. Lege sie in den Ordner datapacks deiner Welt (ohne Entpacken).'; renderPane(); return;
+    }
+    if (a === 'log') {
+      try {
+        const d = await (await fetch('/api/log')).json();
+        CMD.log = d.error ? d.error : (d.lines.length ? d.lines.join('\n') : 'Keine passenden Zeilen im Log. Hast du /reload ausgeführt?');
+      } catch (e) { CMD.log = 'Log nicht lesbar: ' + e.message; }
+      renderPane(); return;
+    }
+    if (a === 'write') {
+      try {
+        const r = await fetch('/api/datapack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: cmdPack() }) });
+        const d = await r.json();
+        CMD.writeMsg = r.ok ? 'Geschrieben nach ' + d.path + ' (' + d.files + ' Dateien). In Minecraft: /reload, dann /function blockplan:build_001' : (d.error || 'Fehler beim Schreiben.');
+      } catch (e) { CMD.writeMsg = 'Schreiben fehlgeschlagen: ' + e.message; }
+      renderPane();
+    }
+  });
+  $('#pane').addEventListener('change', (ev) => {
+    if (S.tab === 'cmd' && ev.target.matches('[data-cmd-clear]')) { CMD.clear = ev.target.checked; CMD.writeMsg = ''; renderPane(); }
+  });
+
+  function copyMats(btn) {
+    const lines = (LIVE.on && S.matRemain && S.matsRemain ? S.matsRemain : S.mats).map((m) => m.count + '\t' + pretty(m.item) + '\t' + fmtStacks(m.count, m.stack));
+    copy(['Menge\tMaterial\tStacks'].concat(lines).join('\n'), btn);
+  }
+
+  function layerDone(y) {
+    return S.done.has(y) || (!!LIVE.layerRem && S.layerCounts[y] > 0 && LIVE.layerRem[y] === 0 && LIVE.stats && LIVE.stats.unk === 0);
+  }
+  function paneLayers(pane) {
+    const gy = S.model.size[1];
+    let doneN = 0, rows = '';
+    for (let y = gy - 1; y >= 0; y--) {
+      const auto = !S.done.has(y) && layerDone(y), dn = layerDone(y);
+      if (dn) doneN++;
+      const rest = LIVE.layerRem ? nf.format(LIVE.layerRem[y]) + ' / ' : '';
+      rows += '<tr class="pick' + (dn ? ' done' : '') + (S.layer === y && S.mode !== 'all' ? ' on' : '') + '" data-layer="' + y + '">' +
+        '<td><input type="checkbox" data-done="' + y + '" aria-label="Ebene ' + (S.origin[1] + y) + ' fertig"' + (dn ? ' checked' : '') + (auto ? ' disabled' : '') + '></td>' +
+        '<td class="name">Y ' + (S.origin[1] + y) + '<small>Ebene ' + (y + 1) + ' von ' + gy + (auto ? ' · automatisch fertig' : '') + '</small></td><td class="n">' + rest + nf.format(S.layerCounts[y]) + '</td></tr>';
+    }
+    pane.innerHTML =
+      '<div class="tot"><span>' + doneN + ' von ' + gy + ' Ebenen fertig</span></div>' +
+      '<div class="progress"><i style="width:' + (gy ? doneN / gy * 100 : 0) + '%"></i></div>' +
+      '<table class="list"><thead><tr><th></th><th>Ebene (Welt-Y)</th><th class="n">' + (LIVE.layerRem ? 'Fehlt / Blöcke' : 'Blöcke') + '</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<p class="hint">Zeile anklicken zeigt nur diese Ebene. Mit Live-Abgleich gilt eine Ebene automatisch als fertig, wenn nichts mehr fehlt oder falsch ist. Sonst hakst du sie selbst ab.</p>';
+  }
+
+  /* ------------------------------------------------------ Speichern */
+  function save() {
+    if (!S.storeKey) return;
+    store(() => localStorage.setItem(S.storeKey, JSON.stringify({ origin: S.origin, done: [...S.done], got: [...S.got] })));
+  }
+  function restore() {
+    S.done = new Set(); S.got = new Set();
+    const raw = store(() => localStorage.getItem(S.storeKey));
+    if (!raw) return false;
+    try {
+      const o = JSON.parse(raw);
+      if (Array.isArray(o.origin) && o.origin.length === 3) S.origin = o.origin.map((v) => (Number.isFinite(+v) ? Math.trunc(+v) : 0));
+      S.done = new Set(o.done || []); S.got = new Set(o.got || []);
+      return true;
+    } catch (e) { return false; }
+  }
+  function syncOriginInputs() { $('#ox').value = S.origin[0]; $('#oy').value = S.origin[1]; $('#oz').value = S.origin[2]; }
+  ['#ox', '#oy', '#oz'].forEach((id, i) => {
+    $(id).addEventListener('input', (ev) => {
+      const v = Math.trunc(+ev.target.value); S.origin[i] = Number.isFinite(v) ? v : 0;
+      save(); if (S.model) { updateLayerRead(); renderPane(); draw2d(); if (S.hover) { const h = S.hover; S.hover = null; setHover(h); } liveReset(); liveSoon(); envMoved(); }
+    });
+  });
+
+  /* ------------------------------------------------------ Laden */
+
+  /* Vorlage drehen (Blickrichtung von oben, Norden oben); Blockeigenschaften wie facing/axis werden mitgedreht */
+  function rotateBy(d) {
+    if (!S.model) return;
+    if (!S.base) { S.base = S.model; S.rot = 0; }
+    S.rot = (((S.rot || 0) + d) % 4 + 4) % 4;
+    const m = B.rotateModel(S.base, S.rot);
+    const out = m === S.base ? m : Object.assign({}, m, { name: S.base.name + ' (' + S.rot * 90 + '°)' });
+    const keep = S.base, rot = S.rot, org = S.origin.slice();
+    loadModel(out, { origin: org, keepBase: true });
+    S.base = keep; S.rot = rot;
+    $('#rotinfo').textContent = rot ? 'gedreht um ' + rot * 90 + '° im Uhrzeigersinn' : '';
+  }
+  $('#rotl').addEventListener('click', () => rotateBy(-1));
+  $('#rotr').addEventListener('click', () => rotateBy(1));
+
+  function loadModel(model, opts) {
+    opts = opts || {};
+    showMsg('');
+    if (!opts.keepBase) { S.base = null; S.rot = 0; const ri = $('#rotinfo'); if (ri) ri.textContent = ''; }
+    S.model = model; B.prepare(model.palette);
+    S.mesh = B.buildMesh(model);
+    S.mats = B.materials(model);
+    const [GX, GY, GZ] = model.size;
+    S.layerCounts = new Uint32Array(GY);
+    const per = GX * GZ;
+    for (let y = 0; y < GY; y++) { let n = 0; for (let i = y * per, e = i + per; i < e; i++) if (model.grid[i]) n++; S.layerCounts[y] = n; }
+    S.storeKey = 'blockplan:v1:' + model.name + '|' + model.size.join('x') + '|' + model.total;
+    S.origin = opts.origin ? opts.origin.slice() : [0, 0, 0];
+    const had = restore();
+    if (!had && opts.origin) S.origin = opts.origin.slice();
+    syncOriginInputs();
+    S.sel = null; S.hover = null; S.hl = null; S.hlItem = null; S.query = '';
+    liveReset();
+    S.layer = Math.min(GY - 1, Math.floor(GY * 0.3)); S.mode = 'all';
+    document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === 'all')));
+    const sl = $('#lslider'); sl.max = GY - 1; sl.value = S.layer;
+    renderMeta(); updateLayerRead();
+    buildScene(); syncBoxes(); envMoved();
+    V2.fitted = false;
+    if (S.view === '2d') fit2d();
+    S.tab = 'block'; renderTabs(); renderPane();
+    updateHud();
+    const quads = S.mesh.opaque.n + S.mesh.glass.n;
+    if (LIVE.ready) livePoll(true);
+    if (quads > 3e6) showMsg('Große Vorlage (' + nf.format(quads) + ' Flächen). Die Ansicht kann langsam sein. Nutze „Bis Ebene“ oder „Nur Ebene“.');
+  }
+
+  async function loadFile(file) {
+    if (!file) return;
+    showMsg('Lade ' + file.name + ' …');
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      const raw = new Uint8Array(await file.arrayBuffer());
+      const bytes = await B.decompress(raw);
+      const model = B.parseSchematic(bytes);
+      if (!model.name || /^(Schematic|Structure|Litematica-Vorlage)$/.test(model.name)) model.name = file.name.replace(/\.[^.]+$/, '');
+      loadModel(model);
+    } catch (err) {
+      showMsg('„' + file.name + '“ konnte nicht gelesen werden. ' + (err && err.message ? err.message : ''));
+    }
+  }
+  $('#file').addEventListener('change', (ev) => { loadFile(ev.target.files[0]); ev.target.value = ''; });
+  $('#openlbl').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); $('#file').click(); } });
+  $('#sample').addEventListener('click', () => loadModel(B.makeSample(), { origin: [128, 64, -256] }));
+  let dragDepth = 0;
+  window.addEventListener('dragenter', (ev) => { ev.preventDefault(); dragDepth++; $('#drop').hidden = false; });
+  window.addEventListener('dragover', (ev) => ev.preventDefault());
+  window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#drop').hidden = true; });
+  window.addEventListener('drop', (ev) => { ev.preventDefault(); dragDepth = 0; $('#drop').hidden = true; if (ev.dataTransfer.files.length) loadFile(ev.dataTransfer.files[0]); });
+
+  /* ------------------------------------------------------ Ansicht, Tasten */
+  function setView(v) {
+    if (v === '3d' && !gl3ok) return;
+    S.view = v;
+    $('#v3d').setAttribute('aria-pressed', String(v === '3d')); $('#v2d').setAttribute('aria-pressed', String(v === '2d'));
+    c3d.hidden = v !== '3d'; c2d.hidden = v !== '2d'; $('#zoom2d').hidden = v !== '2d';
+    document.querySelector('.compass').style.display = v === '3d' ? '' : 'none';
+    if (v === '2d') { if (!V2.fitted) fit2d(); else draw2d(); } else { dirty = true; resize(); }
+  }
+  $('#v3d').addEventListener('click', () => setView('3d'));
+  $('#v2d').addEventListener('click', () => setView('2d'));
+  $('#zin').addEventListener('click', () => zoom2d(1.3));
+  $('#zout').addEventListener('click', () => zoom2d(1 / 1.3));
+  $('#zfit').addEventListener('click', fit2d);
+  window.addEventListener('keydown', (ev) => {
+    if (!S.model || /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const k = ev.key;
+    const m = { ArrowLeft: [-1, 0, 0], ArrowRight: [1, 0, 0], ArrowUp: [0, 0, -1], ArrowDown: [0, 0, 1], PageUp: [0, 1, 0], PageDown: [0, -1, 0] }[k];
+    if (m && ev.shiftKey) { ev.preventDefault(); nudgeOrigin(m[0], m[1], m[2]); }
+    else if (m && S.sel) { ev.preventDefault(); step(...m); }
+    else if (k === '[') { if (S.mode === 'all') setMode('only'); setLayer(S.layer - 1); }
+    else if (k === ']') { if (S.mode === 'all') setMode('only'); setLayer(S.layer + 1); }
+    else if (k === 'Escape') { select(null); }
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme3d(); draw2d(); });
+  new MutationObserver(() => { applyTheme3d(); draw2d(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  window.addEventListener('resize', resize);
+
+
+  /* ------------------------------------------------------ Live-Abgleich */
+  /* Nur aktiv, wenn die Seite vom lokalen Blockplan-Server kommt (localhost). */
+  const LIVE = { on: false, ready: false, info: null, dim: 'overworld', sig: null, busy: false, last: null, act: null, apal: null, stats: null, layerRem: null, auto: true, strict: true, error: '', mtime: 0, checked: 0, soon: 0 };
+  const RELEVANT = ['facing', 'half', 'type', 'axis', 'shape', 'hinge', 'part', 'face'];
+  const normKey = (name, props, strict) => {
+    if (!strict) return name;
+    let k = name;
+    for (const p of RELEVANT) if (props && props[p] !== undefined) k += '|' + p + '=' + props[p];
+    return k;
+  };
+  const DIMS = { overworld: 'Oberwelt', nether: 'Nether', end: 'Ende' };
+  const clock = (ms) => (ms ? new Date(ms).toLocaleTimeString('de-DE') : '–');
+
+  function liveReset() { LIVE.sig = null; LIVE.last = null; LIVE.act = null; LIVE.apal = null; LIVE.stats = null; LIVE.layerRem = null; S.status = null; S.matsRemain = null; }
+  function liveSoon() { clearTimeout(LIVE.soon); if (LIVE.ready) LIVE.soon = setTimeout(() => livePoll(true), 500); }
+
+  function compareLive() {
+    const d = LIVE.last, m = S.model;
+    if (!d || !m) return;
+    const bytes = Uint8Array.from(atob(d.grid), (c) => c.charCodeAt(0));
+    const act = new Uint16Array(bytes.buffer, 0, bytes.length >> 1);
+    const strict = LIVE.strict;
+    const gv = gameVer(), tk = m.palette.map((e) => normKey(B.upgradeName(e.name, gv), e.props, strict));
+    const ak = d.palette.map((e) => normKey(e.name, e.props, strict));
+    const n = m.grid.length, GX = m.size[0], GZ = m.size[2], per = GX * GZ;
+    const st = new Uint8Array(n), rem = new Uint32Array(m.palette.length), layerRem = new Uint32Array(m.size[1]);
+    let ok = 0, miss = 0, wrong = 0, unk = 0;
+    for (let i = 0; i < n; i++) {
+      const e = m.grid[i];
+      if (!e || m.palette[e].shape.t === 'none') continue;
+      const a = act[i];
+      if (a === 0xFFFF) { st[i] = 5; unk++; continue; }
+      if (a === 0) { st[i] = 2; miss++; rem[e]++; layerRem[(i / per) | 0]++; continue; }
+      if (tk[e] === ak[a]) { st[i] = 1; ok++; } else { st[i] = 3; wrong++; rem[e]++; layerRem[(i / per) | 0]++; }
+    }
+    LIVE.act = act; LIVE.apal = d.palette;
+    LIVE.stats = { ok, miss, wrong, unk, total: ok + miss + wrong + unk };
+    LIVE.layerRem = layerRem; S.status = st;
+    S.matsRemain = B.materials({ palette: m.palette, counts: rem });
+  }
+
+  async function livePoll(force) {
+    if (!LIVE.on || !LIVE.ready || !S.model || LIVE.busy) return;
+    LIVE.busy = true;
+    try {
+      const m = S.model, o = S.origin;
+      const url = '/api/box?dim=' + LIVE.dim + '&x=' + o[0] + '&y=' + o[1] + '&z=' + o[2] + '&sx=' + m.size[0] + '&sy=' + m.size[1] + '&sz=' + m.size[2] + (force || !LIVE.sig ? '' : '&sig=' + encodeURIComponent(LIVE.sig));
+      const r = await fetch(url);
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      LIVE.error = ''; LIVE.checked = Date.now(); LIVE.mtime = d.mtime;
+      if (!d.unchanged) {
+        LIVE.sig = d.sig; LIVE.last = d; compareLive();
+        applyHighlight(); draw2d(); if (S.tab !== 'block' || true) renderPane();
+      }
+    } catch (e) {
+      LIVE.error = e && e.message ? e.message : String(e);
+    } finally { LIVE.busy = false; renderLiveStat(); }
+  }
+
+  function renderLiveStat() {
+    const el = $('#livestat'); if (!el) return;
+    const st = LIVE.stats; let h = '';
+    if (st) {
+      const exp = st.ok + st.miss + st.wrong;
+      const pct = exp ? Math.round(st.ok / exp * 1000) / 10 : 0;
+      h += '<div class="stack" role="img" aria-label="' + pct + ' Prozent fertig"><i class="ok" style="width:' + (exp ? st.ok / exp * 100 : 0) + '%"></i><i class="bad" style="width:' + (exp ? st.wrong / exp * 100 : 0) + '%"></i></div>' +
+        '<div class="tot"><span><b style="color:var(--good)">' + nf.format(pct) + ' %</b> fertig</span><span>' + nf.format(st.ok) + ' ok</span><span style="color:var(--bad)">' + nf.format(st.wrong) + ' falsch</span><span>' + nf.format(st.miss) + ' fehlen</span></div>';
+      if (st.unk) h += '<p class="hint">' + nf.format(st.unk) + ' Blöcke der Vorlage liegen in Chunks, die noch nicht gespeichert wurden. Sie werden nicht verglichen.</p>';
+      h += '<p class="hint"><span class="dot" style="background:var(--good)"></span>fertig (abgedunkelt) <span class="dot" style="background:var(--bad);margin-left:8px"></span>falsch <span class="dot" style="background:var(--muted);margin-left:8px"></span>fehlt (volle Farbe)</p>';
+    } else if (LIVE.ready && !LIVE.error) h += '<p class="hint">Warte auf die erste Abfrage …</p>';
+    if (LIVE.ready) h += '<p class="hint">Weltstand (Datei): ' + clock(LIVE.mtime) + ' · geprüft: ' + clock(LIVE.checked) + '. Das Spiel schreibt die Welt nur beim Speichern. Mit <code class="id">/save-all</code> erzwingst du das.</p>';
+    if (LIVE.error) h += '<p class="err" role="alert">' + esc(LIVE.error) + '</p>';
+    el.innerHTML = h;
+  }
+
+  function liveBlockLine(c, idx) {
+    if (!LIVE.act || !S.status) return '';
+    const i = c.x + c.z * S.model.size[0] + c.y * S.model.size[0] * S.model.size[2];
+    const a = LIVE.act[i], s = S.status[i];
+    if (!idx || s === 0) return '';
+    if (s === 5) return '<p class="hint">Chunk noch nicht gespeichert, kein Vergleich möglich.</p>';
+    const ae = LIVE.apal[a];
+    if (s === 1) return '<p style="margin:0 0 8px"><span class="tag ok">FERTIG</span> in der Welt: ' + esc(pretty(ae.name)) + '</p>';
+    if (s === 2) return '<p style="margin:0 0 8px"><span class="tag miss">FEHLT</span> an dieser Stelle ist Luft.</p>';
+    const pr = Object.entries(ae.props || {}).filter(([k]) => RELEVANT.indexOf(k) >= 0).map(([k, v]) => k + ': ' + v).join(', ');
+    return '<p style="margin:0 0 8px"><span class="tag bad">FALSCH</span> in der Welt: ' + esc(pretty(ae.name)) + (pr ? ' (' + esc(pr) + ')' : '') + '</p>';
+  }
+
+
+  /* ------------------------------------------- Welt-Umgebung (3D, nur lokal) */
+  const ENV = { on: false, pick: false, r: 48, model: null, mesh: null, op: null, gl: null, sig: null, busy: false, t: 0, x0: 0, y0: 0, z0: 0, unknown: 0, err: '' };
+  function envDispose() {
+    for (const o of [ENV.op, ENV.gl]) { if (o) { scene.remove(o); o.geometry.dispose(); o.material.dispose(); } }
+    ENV.op = ENV.gl = ENV.mesh = ENV.model = null; ENV.sig = null; dirty = true;
+  }
+  function envBox() {
+    const [GX, GY, GZ] = S.model.size, o = S.origin;
+    let r = ENV.r, sy = GY + 48;
+    while ((GX + 2 * r) * sy * (GZ + 2 * r) > 8e6 && r > 8) r -= 8;
+    return { x0: o[0] - r, y0: o[1] - 24, z0: o[2] - r, sx: GX + 2 * r, sy, sz: GZ + 2 * r };
+  }
+  function envCovers() {
+    if (!ENV.model) return false;
+    const [GX, GY, GZ] = S.model.size, o = S.origin, m = 8, sz = ENV.model.size;
+    return o[0] - m >= ENV.x0 && o[0] + GX + m <= ENV.x0 + sz[0] && o[2] - m >= ENV.z0 && o[2] + GZ + m <= ENV.z0 + sz[2] && o[1] - 8 >= ENV.y0 && o[1] + GY + 8 <= ENV.y0 + sz[1];
+  }
+  function envPlace() {
+    if (!ENV.op) return;
+    const o = S.origin;
+    for (const m of [ENV.op, ENV.gl]) m.position.set(ENV.x0 - o[0], ENV.y0 - o[1], ENV.z0 - o[2]);
+    envRange(); dirty = true;
+  }
+  function envRange() {
+    if (!ENV.op || !ENV.mesh) return;
+    const sy = ENV.model.size[1];
+    const top = S.mode === 'all' ? sy : Math.max(0, Math.min(sy, S.origin[1] + S.layer - ENV.y0 + 1));
+    ENV.op.geometry.setDrawRange(0, ENV.mesh.startsOpaque[top] * 6);
+    ENV.gl.geometry.setDrawRange(0, ENV.mesh.startsGlass[top] * 6);
+    dirty = true;
+  }
+  function envMoved() {
+    if (!ENV.on || !renderer) return;
+    envPlace();
+    clearTimeout(ENV.t);
+    if (!envCovers()) ENV.t = setTimeout(() => envLoad('move'), 400);
+  }
+  async function envLoad(mode) {
+    if (!ENV.on || !LIVE.ready || !S.model || !renderer || ENV.busy) return;
+    const same = mode === 'refresh' && ENV.model;
+    const b = same ? { x0: ENV.x0, y0: ENV.y0, z0: ENV.z0, sx: ENV.model.size[0], sy: ENV.model.size[1], sz: ENV.model.size[2] } : envBox();
+    if (mode === 'move' && envCovers()) return;
+    ENV.busy = true;
+    try {
+      const url = '/api/box?dim=' + LIVE.dim + '&x=' + b.x0 + '&y=' + b.y0 + '&z=' + b.z0 + '&sx=' + b.sx + '&sy=' + b.sy + '&sz=' + b.sz + (same && ENV.sig ? '&sig=' + encodeURIComponent(ENV.sig) : '');
+      const d = await (await fetch(url)).json();
+      if (d.error) throw new Error(d.error);
+      ENV.err = '';
+      if (!d.unchanged) {
+        const bytes = Uint8Array.from(atob(d.grid), (c) => c.charCodeAt(0));
+        const grid = new Uint16Array(bytes.buffer, 0, bytes.length >> 1);
+        for (let i = 0; i < grid.length; i++) if (grid[i] === 0xFFFF) grid[i] = 0;
+        const palette = d.palette.map((e, i) => ({ name: e.name, props: e.props || {}, key: B.stateKey(e.name, e.props), air: i === 0 }));
+        B.prepare(palette);
+        const model = { size: d.size, grid, palette };
+        const mesh = B.buildMesh(model);
+        envDispose();
+        ENV.model = model; ENV.mesh = mesh; ENV.sig = d.sig; ENV.x0 = b.x0; ENV.y0 = b.y0; ENV.z0 = b.z0; ENV.unknown = d.unknown;
+        ENV.op = new THREE.Mesh(geoFrom(mesh.opaque), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, color: 0xc4c4c4 }));
+        ENV.op.frustumCulled = false; scene.add(ENV.op);
+        ENV.gl = new THREE.Mesh(geoFrom(mesh.glass), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, color: 0xc4c4c4, transparent: true, opacity: 0.35, depthWrite: false }));
+        ENV.gl.frustumCulled = false; ENV.gl.renderOrder = 1; scene.add(ENV.gl);
+        envPlace();
+      }
+    } catch (e) { ENV.err = e && e.message ? e.message : String(e); } finally { ENV.busy = false; envInfo(); }
+  }
+  function envInfo() {
+    const el = $('#envinfo'); if (!el) return;
+    el.textContent = ENV.err ? 'Fehler: ' + ENV.err
+      : ENV.model ? 'Geladen: ' + ENV.model.size.join(' × ') + ' Blöcke ab ' + ENV.x0 + ' ' + ENV.y0 + ' ' + ENV.z0 + (ENV.unknown ? ' · ' + nf.format(ENV.unknown) + ' Blöcke in nicht gespeicherten Chunks (leer dargestellt)' : '') + '. Umgebung grau, Vorlage farbig. Startpunkt verschieben: Umschalt + Pfeiltasten (Bild auf/ab für Höhe).'
+      : 'Lädt …';
+  }
+  function nudgeOrigin(dx, dy, dz) {
+    if (!S.model) return;
+    S.origin[0] += dx; S.origin[1] += dy; S.origin[2] += dz;
+    syncOriginInputs(); save(); updateLayerRead(); renderPane(); draw2d(); liveReset(); liveSoon(); envMoved();
+  }
+  /* Klick auf Boden: Ecke der Vorlage (kleinste X/Z) auf den angeklickten Block, Unterkante darüber. */
+  function envPick(ev) {
+    if (!ENV.model || !renderer) return false;
+    camera.updateMatrixWorld();
+    const r = c3d.getBoundingClientRect();
+    const nx = ((ev.clientX - r.left) / r.width) * 2 - 1, ny = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    const p = new THREE.Vector3(nx, ny, 0.5).unproject(camera), o = camera.position, d = p.sub(o).normalize(), q = ENV.op.position;
+    const h = B.raycast(ENV.model, [o.x - q.x, o.y - q.y, o.z - q.z], [d.x, d.y, d.z], 0, ENV.model.size[1] - 1);
+    if (!h) return false;
+    const w = [ENV.x0 + h.x, ENV.y0 + h.y + 1, ENV.z0 + h.z];
+    nudgeOrigin(w[0] - S.origin[0], w[1] - S.origin[1], w[2] - S.origin[2]);
+    return true;
+  }
+  $('#envon').addEventListener('change', (ev) => {
+    ENV.on = ev.target.checked; $('#envopts').hidden = !ENV.on;
+    if (ENV.on) { envInfo(); envLoad('move'); } else { envDispose(); ENV.pick = false; $('#envpick').checked = false; }
+  });
+  $('#envr').addEventListener('change', (ev) => { ENV.r = +ev.target.value; if (ENV.on) { envDispose(); envLoad('move'); } });
+  $('#envpick').addEventListener('change', (ev) => { ENV.pick = ev.target.checked; });
+
+  async function liveInit() {
+    if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+    let info;
+    try { const r = await fetch('/api/info'); if (!r.ok) return; info = await r.json(); } catch (e) { return; }
+    if (!info || !info.live) return;
+    LIVE.on = true; LIVE.info = info;
+    $('#livesec').hidden = false;
+    fillWorlds(info);
+    const saved = store(() => localStorage.getItem('blockplan:world'));
+    if (info.active) { $('#world').value = '__active'; applyActive(info.active); }
+    else if (saved && info.worlds.some((w) => w.name === saved)) { $('#world').value = saved; chooseWorld(saved); }
+    renderLiveStat();
+  }
+  function fillWorlds(info) {
+    const sel = $('#world'), cur = sel.value;
+    sel.innerHTML = '<option value="">' + (info.worlds.length ? 'Welt wählen …' : 'Keine Welten im Saves-Ordner') + '</option>' +
+      (info.active ? '<option value="__active">' + esc(info.active.level.name) + ' (per Start gewählt)</option>' : '') +
+      info.worlds.map((w) => '<option value="' + esc(w.name) + '">' + esc(w.label || w.name) + '</option>').join('');
+    sel.value = cur;
+  }
+  function applyActive(a) {
+    LIVE.ready = true; LIVE.error = '';
+    const dimSel = $('#dim');
+    [...dimSel.options].forEach((o) => { o.disabled = a.dims.indexOf(o.value) < 0; });
+    if (a.dims.indexOf(LIVE.dim) < 0 && a.dims.length) LIVE.dim = a.dims[0];
+    dimSel.value = LIVE.dim;
+    const pl = a.level && a.level.player;
+    const pb = $('#liveplayer'); pb.hidden = !pl;
+    pb.title = pl ? 'Letzter gespeicherter Stand: ' + pl.x + ' ' + pl.y + ' ' + pl.z : '';
+    LIVE.player = pl; LIVE.active = a;
+    liveReset(); renderLiveStat(); livePoll(true);
+    if (ENV.on) { envDispose(); envLoad('move'); }
+  }
+  async function chooseWorld(name) {
+    if (!name) { LIVE.ready = false; liveReset(); renderLiveStat(); applyHighlight(); draw2d(); return; }
+    if (name === '__active') { applyActive(LIVE.info.active); return; }
+    try {
+      const r = await fetch('/api/select?name=' + encodeURIComponent(name)); const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      store(() => localStorage.setItem('blockplan:world', name));
+      applyActive(d.active);
+    } catch (e) { LIVE.error = e.message; renderLiveStat(); }
+  }
+  $('#world').addEventListener('change', (ev) => chooseWorld(ev.target.value));
+  $('#world').addEventListener('focus', async () => {
+    if (!LIVE.on) return;
+    try { const r = await fetch('/api/info'); const info = await r.json(); LIVE.info = info; fillWorlds(info); } catch (e) { /* egal */ }
+  });
+  $('#dim').addEventListener('change', (ev) => { LIVE.dim = ev.target.value; liveReset(); renderLiveStat(); livePoll(true); if (ENV.on) { envDispose(); envLoad('move'); } });
+  $('#livego').addEventListener('click', () => livePoll(true));
+  $('#liveauto').addEventListener('change', (ev) => { LIVE.auto = ev.target.checked; });
+  $('#liveprog').addEventListener('change', (ev) => { S.progress = ev.target.checked; applyHighlight(); draw2d(); });
+  $('#livestrict').addEventListener('change', (ev) => { LIVE.strict = ev.target.checked; if (LIVE.last) { compareLive(); applyHighlight(); draw2d(); renderPane(); renderLiveStat(); } });
+  $('#liveplayer').addEventListener('click', () => {
+    const p = LIVE.player; if (!p) return;
+    S.origin = [p.x, p.y, p.z]; syncOriginInputs(); save();
+    const dm = { 'minecraft:overworld': 'overworld', 'minecraft:the_nether': 'nether', 'minecraft:the_end': 'end' }[p.dim];
+    if (dm && !$('#dim').querySelector('option[value="' + dm + '"]').disabled) { LIVE.dim = dm; $('#dim').value = dm; }
+    updateLayerRead(); renderPane(); draw2d(); liveReset(); livePoll(true);
+  });
+  setInterval(() => { if (LIVE.on && LIVE.ready && LIVE.auto && !document.hidden) { livePoll(false); envLoad('refresh'); } }, 10000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && LIVE.on && LIVE.ready && LIVE.auto) livePoll(false); });
+
+  /* ------------------------------------------------------ Start */
+  init3d();
+  renderPane();
+  loadModel(B.makeSample(), { origin: [128, 64, -256] });
+  liveInit();
+  window.__bp = {ENV,envLoad,nudgeOrigin, S, B, LIVE, setView, setMode, setLayer, select, loadModel, V2, livePoll };
+})();
+</script>

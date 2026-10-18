@@ -1,0 +1,30 @@
+{
+  "name": "blockplan",
+  "version": "0.9.0",
+  "description": "Minecraft-Vorlagen in 3D ansehen, live mit deiner Welt vergleichen und als /fill-Befehle oder Datapack bauen.",
+  "license": "MIT",
+  "private": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "start": "node build.js && node dist/blockplan-live/server.js",
+    "test": "node build.js && node test/run.js && node test/anvil.js && node test/nbtw.js && node test/export.js && node test/packfmt.js && node test/roots.js",
+    "test:ui": "node build.js && node test/fixture.js && node test/browser.js && node test/live.js",
+    "release": "node build.js && node scripts/release.js"
+  },
+  "keywords": [
+    "minecraft",
+    "litematica",
+    "schematic",
+    "litematic",
+    "schem",
+    "viewer",
+    "datapack",
+    "builder"
+  ],
+  "devDependencies": {
+    "three": "0.128.0"
+  }
+}
