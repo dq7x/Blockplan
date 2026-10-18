@@ -39,7 +39,7 @@ Everything runs locally. Nothing is uploaded.
 **Option B: from source**
 
 ```bash
-git clone https://github.com/<your-name>/blockplan.git
+git clone https://github.com/dq7x/blockplan.git
 cd blockplan
 npm ci
 npm start      # builds and starts the server on http://localhost:8765

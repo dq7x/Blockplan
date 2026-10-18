@@ -73,7 +73,7 @@ Updates: Ordner löschen, neues ZIP entpacken. Deine Einstellungen (Startpunkt, 
 ### Variante B: Aus dem Quellcode
 
 ```bash
-git clone https://github.com/<dein-name>/blockplan.git
+git clone https://github.com/dq7x/blockplan.git
 cd blockplan
 npm ci          # lädt nur three.js für den Build
 npm start       # baut und startet den Server auf http://localhost:8765
